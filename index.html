@@ -391,9 +391,82 @@
         }
         .cat-btn .cat-emoji { font-size: 1.4rem; }
         .cat-btn.selected { border-color: var(--accent); color: var(--text); background: rgba(108,99,255,0.15); }
+
+        /* ===== PIN LOCK SCREEN ===== */
+        .pin-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--bg);
+            z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 20px;
+        }
+        .pin-overlay.hidden { display: none; }
+        .pin-logo { font-size: 3.5rem; margin-bottom: 4px; }
+        .pin-title {
+            font-size: 1.4rem; font-weight: 700;
+            background: linear-gradient(135deg, #6c63ff, #ff6584);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .pin-subtitle { color: var(--text2); font-size: 0.85rem; margin-top: -8px; }
+        .pin-dots { display: flex; gap: 14px; margin: 10px 0; }
+        .pin-dot {
+            width: 16px; height: 16px; border-radius: 50%;
+            border: 2px solid var(--accent); background: transparent;
+            transition: all 0.2s;
+        }
+        .pin-dot.filled { background: var(--accent); transform: scale(1.15); }
+        .pin-dot.error { border-color: var(--danger); background: var(--danger); animation: pinShake 0.4s; }
+        @keyframes pinShake {
+            0%,100% { transform: translateX(0); }
+            25% { transform: translateX(-8px); }
+            75% { transform: translateX(8px); }
+        }
+        .pin-keypad {
+            display: grid; grid-template-columns: repeat(3, 1fr);
+            gap: 12px; max-width: 280px; margin-top: 8px;
+        }
+        .pin-key {
+            width: 72px; height: 72px; border-radius: 50%;
+            background: var(--card); border: 1px solid var(--border);
+            color: var(--text); font-family: inherit;
+            font-size: 1.5rem; font-weight: 600;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: all 0.15s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .pin-key:active { background: var(--accent); transform: scale(0.95); }
+        .pin-key.fn { font-size: 0.8rem; font-weight: 500; color: var(--text2); background: transparent; border: none; }
+        .pin-key.fn:active { color: var(--text); background: transparent; }
+        .pin-error-msg { color: var(--danger); font-size: 0.8rem; min-height: 20px; }
     </style>
 </head>
 <body>
+
+<!-- ===== PIN LOCK SCREEN ===== -->
+<div class="pin-overlay" id="pinOverlay">
+    <div class="pin-logo">₹</div>
+    <div class="pin-title">Kharcha</div>
+    <div class="pin-subtitle" id="pinMsg">Enter 4-digit PIN</div>
+    <div class="pin-dots" id="pinDots">
+        <div class="pin-dot"></div><div class="pin-dot"></div>
+        <div class="pin-dot"></div><div class="pin-dot"></div>
+    </div>
+    <div class="pin-error-msg" id="pinError"></div>
+    <div class="pin-keypad" id="pinKeypad">
+        <button class="pin-key" data-val="1">1</button>
+        <button class="pin-key" data-val="2">2</button>
+        <button class="pin-key" data-val="3">3</button>
+        <button class="pin-key" data-val="4">4</button>
+        <button class="pin-key" data-val="5">5</button>
+        <button class="pin-key" data-val="6">6</button>
+        <button class="pin-key" data-val="7">7</button>
+        <button class="pin-key" data-val="8">8</button>
+        <button class="pin-key" data-val="9">9</button>
+        <button class="pin-key fn" data-val="reset">Reset</button>
+        <button class="pin-key" data-val="0">0</button>
+        <button class="pin-key fn" data-val="del">⌫</button>
+    </div>
+</div>
 
 <!-- ===== INSTALL BANNER ===== -->
 <div class="install-banner" id="installBanner">
@@ -622,6 +695,92 @@
 </div>
 
 <script>
+// ==================== PIN LOCK ====================
+(function() {
+    const PIN_KEY = 'kharcha_pin';
+    const overlay = document.getElementById('pinOverlay');
+    const dots = document.querySelectorAll('#pinDots .pin-dot');
+    const msg = document.getElementById('pinMsg');
+    const errEl = document.getElementById('pinError');
+    let pin = [];
+    let storedPin = localStorage.getItem(PIN_KEY);
+    let isSettingPin = !storedPin;
+    let confirmPin = null;
+
+    if (isSettingPin) {
+        msg.textContent = 'Naya PIN set karo (4 digit)';
+    } else {
+        msg.textContent = 'PIN daalein';
+    }
+
+    function updateDots(err) {
+        dots.forEach((d, i) => {
+            d.classList.toggle('filled', i < pin.length);
+            d.classList.toggle('error', !!err);
+        });
+    }
+
+    function resetPin() {
+        if (!storedPin) { errEl.textContent = 'Pehle PIN set karo'; return; }
+        let c = prompt('Purana PIN daalein reset karne ke liye:');
+        if (c && c === storedPin) {
+            localStorage.removeItem(PIN_KEY);
+            storedPin = null; isSettingPin = true; confirmPin = null; pin = [];
+            msg.textContent = 'Naya PIN set karo (4 digit)';
+            errEl.textContent = '';
+            updateDots(false);
+        } else if (c !== null) {
+            errEl.textContent = 'Galat PIN!';
+        }
+    }
+
+    function handleKey(val) {
+        if (val === 'del') { pin.pop(); errEl.textContent = ''; updateDots(false); return; }
+        if (val === 'reset') { resetPin(); return; }
+        if (pin.length >= 4) return;
+        pin.push(val);
+        updateDots(false);
+        if (pin.length === 4) {
+            const entered = pin.join('');
+            setTimeout(() => {
+                if (isSettingPin) {
+                    if (!confirmPin) {
+                        confirmPin = entered;
+                        pin = [];
+                        msg.textContent = 'PIN confirm karo';
+                        updateDots(false);
+                    } else {
+                        if (entered === confirmPin) {
+                            localStorage.setItem(PIN_KEY, confirmPin);
+                            overlay.classList.add('hidden');
+                        } else {
+                            errEl.textContent = 'PIN match nahi hua, dobara try karo';
+                            confirmPin = null; pin = [];
+                            msg.textContent = 'Naya PIN set karo (4 digit)';
+                            updateDots(true);
+                            setTimeout(() => updateDots(false), 400);
+                        }
+                    }
+                } else {
+                    if (entered === storedPin) {
+                        overlay.classList.add('hidden');
+                    } else {
+                        errEl.textContent = 'Galat PIN!';
+                        pin = [];
+                        updateDots(true);
+                        setTimeout(() => updateDots(false), 400);
+                    }
+                }
+            }, 150);
+        }
+    }
+
+    document.getElementById('pinKeypad').addEventListener('click', function(e) {
+        const btn = e.target.closest('.pin-key');
+        if (btn) handleKey(btn.dataset.val);
+    });
+})();
+
 // ==================== DATA ====================
 const STORAGE_KEY = 'expenseTrackerData';
 
